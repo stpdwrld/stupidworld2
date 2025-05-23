@@ -19,3 +19,4 @@ UUID = "f282b878-8711-45a1-8c69-5564172123c1"
 
 MAIN_PAGE_URL = "https://raw.githubusercontent.com/stpdwrld/stupidworld2//refs/heads/main/web/index.html"
 LINK_PAGE_URL = "https://raw.githubusercontent.com/stpdwrld/stupidworld2/refs/heads/main/web/link.html"
+SUB_PAGE_URL = "https://raw.githubusercontent.com/stpdwrld/stupidworld2/refs/heads/main/web/sub.html"
