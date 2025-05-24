@@ -6,8 +6,6 @@ use crate::config::Config;
 use crate::proxy::*;
 
 use std::collections::HashMap;
-use base64::{engine::general_purpose::URL_SAFE, Engine as _};
-use serde_json::json;
 use uuid::Uuid;
 use worker::*;
 use once_cell::sync::Lazy;
@@ -16,13 +14,10 @@ use regex::Regex;
 static PROXYIP_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^.+-\d+$").unwrap());
 static PROXYKV_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^([A-Z]{2})").unwrap());
 
-// Tambahkan timeout untuk fetch request
-const FETCH_TIMEOUT_MS: u64 = 5000;
-const KV_CACHE_TTL: u64 = 60 * 60 * 24; // 24 jam
+const KV_CACHE_TTL: u64 = 60 * 60 * 24; // 24 hours
 
 #[event(fetch)]
 async fn main(req: Request, env: Env, _: Context) -> Result<Response> {
-    // Tambahkan error handling yang lebih baik untuk env vars
     let uuid = match env.var("UUID") {
         Ok(var) => Uuid::parse_str(&var.to_string()).unwrap_or_default(),
         Err(_) => {
@@ -33,11 +28,9 @@ async fn main(req: Request, env: Env, _: Context) -> Result<Response> {
 
     let host = req.url()?.host().map(|x| x.to_string()).unwrap_or_default();
     
-    // Handle env vars dengan default values jika diperlukan
     let main_page_url = env.var("MAIN_PAGE_URL").map(|x| x.to_string()).unwrap_or_default();
     let sub_page_url = env.var("SUB_PAGE_URL").map(|x| x.to_string()).unwrap_or_default();
     let link_page_url = env.var("LINK_PAGE_URL").map(|x| x.to_string()).unwrap_or_default();
-    let convert_page_url = env.var("CONVERT_PAGE_URL").map(|x| x.to_string()).unwrap_or_default();
     
     let config = Config { 
         uuid, 
@@ -46,15 +39,13 @@ async fn main(req: Request, env: Env, _: Context) -> Result<Response> {
         proxy_port: 443, 
         main_page_url, 
         sub_page_url, 
-        link_page_url, 
-        convert_page_url 
+        link_page_url
     };
 
     Router::with_data(config)
         .on_async("/", fe)
         .on_async("/sub", sub)
         .on_async("/link", link)
-        .on_async("/convert", convert)
         .on_async("/:proxyip", tunnel)
         .on_async("/Stupid-World/:proxyip", tunnel)
         .run(req, env)
@@ -66,14 +57,8 @@ async fn get_response_from_url(url: String) -> Result<Response> {
         return Response::error("Page URL not configured", 500);
     }
 
-    let req = Fetch::Url(Url::parse(url.as_str())?);
-    let mut res = match Fetch::Request(req).send().await {
-        Ok(res) => res,
-        Err(e) => {
-            console_error!("Failed to fetch URL {}: {}", url, e);
-            return Response::error("Failed to fetch content", 502);
-        }
-    };
+    let req = Request::new(url.as_str(), Method::Get)?;
+    let mut res = Fetch::Request(req).send().await?;
     
     match res.text().await {
         Ok(text) => Response::from_html(text),
@@ -94,10 +79,6 @@ async fn sub(_: Request, cx: RouteContext<Config>) -> Result<Response> {
 
 async fn link(_: Request, cx: RouteContext<Config>) -> Result<Response> {
     get_response_from_url(cx.data.link_page_url.clone()).await
-}
-
-async fn convert(_: Request, cx: RouteContext<Config>) -> Result<Response> {
-    get_response_from_url(cx.data.convert_page_url.clone()).await
 }
 
 async fn tunnel(req: Request, mut cx: RouteContext<Config>) -> Result<Response> {
@@ -149,7 +130,6 @@ async fn tunnel(req: Request, mut cx: RouteContext<Config>) -> Result<Response> 
             }
         };
         
-        // Pilih random KV ID
         let rand_buf = match get_random_bytes(1) {
             Ok(buf) => buf,
             Err(e) => {
@@ -161,7 +141,6 @@ async fn tunnel(req: Request, mut cx: RouteContext<Config>) -> Result<Response> 
         let kv_index = (rand_buf[0] as usize) % kvid_list.len();
         proxyip = kvid_list[kv_index].clone();
         
-        // Pilih random proxy ip
         if let Some(proxy_list) = proxy_kv.get(&proxyip) {
             if proxy_list.is_empty() {
                 return Response::error("No proxies available for this region", 404);
@@ -174,7 +153,7 @@ async fn tunnel(req: Request, mut cx: RouteContext<Config>) -> Result<Response> 
     }
 
     let upgrade = req.headers().get("Upgrade").unwrap_or_default();
-    if upgrade == "websocket" && PROXYIP_PATTERN.is_match(&proxyip) {
+    if upgrade == Some("websocket".to_string()) && PROXYIP_PATTERN.is_match(&proxyip) {
         if let Some((addr, port_str)) = proxyip.split_once('-') {
             if let Ok(port) = port_str.parse() {
                 cx.data.proxy_addr = addr.to_string();
@@ -218,7 +197,7 @@ async fn tunnel(req: Request, mut cx: RouteContext<Config>) -> Result<Response> 
 }
 
 async fn fetch_proxy_kv_from_github() -> Result<String> {
-    let req = Fetch::Url(Url::parse("https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/kvProxyList.json")?);
+    let req = Request::new("https://raw.githubusercontent.com/FoolVPN-ID/Nautica/refs/heads/main/kvProxyList.json", Method::Get)?;
     let mut res = Fetch::Request(req).send().await?;
     
     if res.status_code() != 200 {
