@@ -30,7 +30,8 @@ async fn main(req: Request, env: Env, _: Context) -> Result<Response> {
     Router::with_data(config)
         .on_async("/", fe)
         .on_async("/link", link)
-        .on_async("/sub", sub).
+        .on_async("/sub", sub)
+        .on("/v2r", v2r)
         .on_async("/Stupid-World/:proxyip", tunnel)
         .run(req, env)
         .await
@@ -109,4 +110,35 @@ async fn tunnel(req: Request, mut cx: RouteContext<Config>) -> Result<Response> 
     } else {
         Response::from_html("hi from wasm!")
     }
+
+}
+
+fn v2r(_: Request, cx: RouteContext<Config>) -> Result<Response> {
+    let host = cx.data.host.to_string();
+    let uuid = cx.data.uuid.to_string();
+
+    let vmess_v2r = {
+        let config = json!({
+            "ps": "siren vmess",
+            "v": "2",
+            "add": host,
+            "port": "80",
+            "id": uuid,
+            "aid": "0",
+            "scy": "zero",
+            "net": "ws",
+            "type": "none",
+            "host": host,
+            "path": "/KR",
+            "tls": "",
+            "sni": "",
+            "alpn": ""}
+        );
+        format!("vmess://{}", URL_SAFE.encode(config.to_string()))
+    };
+    let vless_v2r = format!("vless://{uuid}@{host}:443?encryption=none&type=ws&host={host}&path=%2FKR&security=tls&sni={host}#siren vless");
+    let trojan_v2r = format!("trojan://{uuid}@{host}:443?encryption=none&type=ws&host={host}&path=%2FKR&security=tls&sni={host}#siren trojan");
+    let ss_v2r = format!("ss://{}@{host}:443?plugin=v2ray-plugin%3Btls%3Bmux%3D0%3Bmode%3Dwebsocket%3Bpath%3D%2FKR%3Bhost%3D{host}#siren ss", URL_SAFE.encode(format!("none:{uuid}")));
+    
+    Response::from_body(ResponseBody::Body(format!("{vmess_v2r}\n{vless_v2r}\n{trojan_v2r}\n{ss_v2r}").into()))
 }
