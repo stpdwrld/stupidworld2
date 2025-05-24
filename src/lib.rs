@@ -119,7 +119,7 @@ async fn tunnel(req: Request, mut cx: RouteContext<Config>) -> Result<Response> 
                 }
             };
             
-            let proxy_index = (u32::from_ne_bytes(rand_buf) as usize % proxy_list.len();
+            let proxy_index = (u32::from_ne_bytes(rand_buf) as usize) % proxy_list.len();
             let candidate = proxy_list[proxy_index].clone().replace(":", "-");
             
             // Simple health check (could be enhanced with actual connection test)
